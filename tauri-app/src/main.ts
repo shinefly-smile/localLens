@@ -55,6 +55,13 @@ async function initModelStatus() {
   await listen<string>("model-status", (event) => {
     applyModelStatus(event.payload as ModelStatus);
   });
+
+  // 模型切换后旧向量已清除，提示用户重新索引
+  await listen<string>("reindex-required", (event) => {
+    const statusEl = $("import-status");
+    statusEl.textContent = `⚠ 模型已切换至 ${event.payload}，旧向量已清除，请重新导入文件以重建索引`;
+    statusEl.className = "import-status error";
+  });
 }
 
 function applyModelStatus(status: ModelStatus) {

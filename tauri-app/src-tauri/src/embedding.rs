@@ -12,10 +12,10 @@ const MAX_SEQ: usize = 128;
 pub struct EmbeddingModel {
     session: Session,
     tokenizer: Tokenizer,
+    /// 部分 ONNX 导出不含 token_type_ids 输入，加载时自动检测
+    has_type_ids: bool,
 }
 
-// ort::session::Session 在 ort 2.x 内部用 Arc 管理，是 Send；
-// tokenizers::Tokenizer 也是 Send。用 unsafe 声明跨线程安全。
 unsafe impl Send for EmbeddingModel {}
 unsafe impl Sync for EmbeddingModel {}
 
@@ -28,7 +28,7 @@ impl EmbeddingModel {
             return Err(format!("Tokenizer 未找到: {}", tokenizer_path.display()));
         }
 
-        // 全局 ORT 初始化（幂等）- commit() 在 rc.11 返回 bool
+        // 全局 ORT 初始化（幂等）
         ort::init().with_name("LocalLens").commit();
 
         let session = Session::builder()
@@ -36,10 +36,24 @@ impl EmbeddingModel {
             .commit_from_file(model_path)
             .map_err(|e| format!("模型加载失败: {e}"))?;
 
+        // 检测模型是否需要 token_type_ids 输入
+        let has_type_ids = session
+            .inputs()
+            .iter()
+            .any(|i| i.name() == "token_type_ids");
+        eprintln!(
+            "[LocalLens] 模型输入检测: token_type_ids={}",
+            has_type_ids
+        );
+
         let tokenizer = Tokenizer::from_file(tokenizer_path)
             .map_err(|e| format!("Tokenizer 加载失败: {e}"))?;
 
-        Ok(Self { session, tokenizer })
+        Ok(Self {
+            session,
+            tokenizer,
+            has_type_ids,
+        })
     }
 
     /// 将文本编码为 L2-normalized 向量
@@ -56,40 +70,44 @@ impl EmbeddingModel {
             .iter()
             .map(|&x| x as i64)
             .collect();
-        let type_ids: Vec<i64> = enc.get_type_ids()[..seq_len]
-            .iter()
-            .map(|&x| x as i64)
-            .collect();
         let mask_f32: Vec<f32> = enc.get_attention_mask()[..seq_len]
             .iter()
             .map(|&x| x as f32)
             .collect();
 
-        // ort 2.0-rc.11: Tensor::from_array(([shape...], Vec<T>))
         let ids_ort = Tensor::<i64>::from_array(([1_usize, seq_len], input_ids))
             .map_err(|e| e.to_string())?;
         let mask_ort = Tensor::<i64>::from_array(([1_usize, seq_len], attn_mask))
             .map_err(|e| e.to_string())?;
-        let types_ort = Tensor::<i64>::from_array(([1_usize, seq_len], type_ids))
-            .map_err(|e| e.to_string())?;
 
-        // ort 2.0-rc.11: inputs! 返回 Vec，session.run() 返回 Result
-        let outputs = self
-            .session
-            .run(ort::inputs![
-                "input_ids"      => ids_ort,
-                "attention_mask" => mask_ort,
-                "token_type_ids" => types_ort,
-            ])
-            .map_err(|e| format!("推理失败: {e}"))?;
+        let outputs = if self.has_type_ids {
+            let type_ids: Vec<i64> = enc.get_type_ids()[..seq_len]
+                .iter()
+                .map(|&x| x as i64)
+                .collect();
+            let types_ort = Tensor::<i64>::from_array(([1_usize, seq_len], type_ids))
+                .map_err(|e| e.to_string())?;
+            self.session
+                .run(ort::inputs![
+                    "input_ids"      => ids_ort,
+                    "attention_mask" => mask_ort,
+                    "token_type_ids" => types_ort,
+                ])
+                .map_err(|e| format!("推理失败: {e}"))?
+        } else {
+            self.session
+                .run(ort::inputs![
+                    "input_ids"      => ids_ort,
+                    "attention_mask" => mask_ort,
+                ])
+                .map_err(|e| format!("推理失败: {e}"))?
+        };
 
         // 提取 last_hidden_state: [1, seq_len, hidden_dim]
-        // ort 2.0-rc.11: try_extract_tensor 返回 (&Shape, &[T]) 元组
         let (_, flat) = outputs["last_hidden_state"]
             .try_extract_tensor::<f32>()
             .map_err(|e| e.to_string())?;
 
-        // flat 是 &[f32]，长度 = 1 * seq_len * hidden_dim
         let hidden_dim = flat.len() / seq_len;
 
         // Mean pooling（attention mask 加权）

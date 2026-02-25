@@ -9,6 +9,10 @@ use tauri::{Emitter, Manager};
 use tauri_plugin_dialog::DialogExt;
 use walkdir::WalkDir;
 
+// ── 当前嵌入模型标识（版本变更时自动清除旧向量）────────────────────────────────
+
+const MODEL_NAME: &str = "paraphrase-multilingual-MiniLM-L12-v2";
+
 // ── 全局模型实例（静态，避免把非 Send 类型放进 Tauri managed state） ──────────
 
 static MODEL: OnceLock<Mutex<Option<EmbeddingModel>>> = OnceLock::new();
@@ -108,6 +112,10 @@ fn open_db(app: &tauri::AppHandle) -> Result<Connection, String> {
 fn init_schema(conn: &Connection) -> SqlResult<()> {
     conn.execute_batch(
         "
+        CREATE TABLE IF NOT EXISTS app_meta (
+            key   TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        );
         CREATE TABLE IF NOT EXISTS files (
             id           INTEGER PRIMARY KEY AUTOINCREMENT,
             path         TEXT NOT NULL UNIQUE,
@@ -120,7 +128,7 @@ fn init_schema(conn: &Connection) -> SqlResult<()> {
             content      TEXT NOT NULL,
             chunk_index  INTEGER NOT NULL
         );
-        -- 向量存储：BLOB = 384 × f32 little-endian
+        -- 向量存储：BLOB = hidden_dim × f32 little-endian
         CREATE TABLE IF NOT EXISTS chunk_embeddings (
             chunk_id  INTEGER PRIMARY KEY REFERENCES chunks(id),
             embedding BLOB NOT NULL
@@ -129,6 +137,47 @@ fn init_schema(conn: &Connection) -> SqlResult<()> {
         CREATE INDEX IF NOT EXISTS idx_chunks_content ON chunks(content);
         ",
     )
+}
+
+/// 检查模型版本，若与上次不同则清除所有旧向量并更新记录
+/// 返回 true 表示发生了模型切换（用户需要重新导入以生成新向量）
+fn check_model_version(conn: &Connection) -> bool {
+    let stored: Option<String> = conn
+        .query_row(
+            "SELECT value FROM app_meta WHERE key = 'model_name'",
+            [],
+            |r| r.get(0),
+        )
+        .ok();
+
+    match stored.as_deref() {
+        Some(name) if name == MODEL_NAME => {
+            // 版本一致，无需操作
+            false
+        }
+        Some(old_name) => {
+            eprintln!(
+                "[LocalLens] 检测到模型切换: {} → {}，清除旧 embedding 向量（请重新导入文件以生成新向量）",
+                old_name, MODEL_NAME
+            );
+            conn.execute("DELETE FROM chunk_embeddings", []).ok();
+            conn.execute(
+                "INSERT OR REPLACE INTO app_meta (key, value) VALUES ('model_name', ?1)",
+                rusqlite::params![MODEL_NAME],
+            )
+            .ok();
+            true
+        }
+        None => {
+            // 首次记录
+            conn.execute(
+                "INSERT OR REPLACE INTO app_meta (key, value) VALUES ('model_name', ?1)",
+                rusqlite::params![MODEL_NAME],
+            )
+            .ok();
+            false
+        }
+    }
 }
 
 // ── 资源路径解析 ──────────────────────────────────────────────────────────────
@@ -576,12 +625,19 @@ pub fn run() {
                     return;
                 }
 
+                eprintln!("[LocalLens] 当前嵌入模型: {}", MODEL_NAME);
                 match EmbeddingModel::load(&model_path, &tok_path) {
                     Ok(model) => {
                         *model_lock().lock().unwrap() = Some(model);
                         *status_arc.lock().unwrap() = ModelStatus::Ready;
                         handle.emit("model-status", "ready").ok();
-                        eprintln!("[LocalLens] 语义搜索模型加载成功");
+                        eprintln!("[LocalLens] 语义搜索模型加载成功 ({})", MODEL_NAME);
+                        // 检查模型版本，必要时清除旧向量
+                        if let Ok(conn) = open_db(&handle) {
+                            if check_model_version(&conn) {
+                                handle.emit("reindex-required", MODEL_NAME).ok();
+                            }
+                        }
                     }
                     Err(e) => {
                         eprintln!("[LocalLens] 模型加载失败: {e}");
