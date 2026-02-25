@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>LocalLens</title>
+    <link rel="stylesheet" href="/src/styles.css" />
+    <script type="module" src="/src/main.ts" defer></script>
+  </head>
+
+  <body>
+    <div class="app">
+
+      <!-- 侧边栏 -->
+      <aside class="sidebar">
+        <div class="brand">
+          <span class="brand-icon">&#9670;</span>
+          <span class="brand-name">LocalLens</span>
+        </div>
+        <p class="brand-sub">本地文档智能搜索</p>
+
+        <div class="import-box">
+          <button id="import-btn" class="btn-import">
+            <span class="btn-icon">&#8853;</span>
+            导入 TXT 文件夹
+          </button>
+          <div id="import-status" class="import-status"></div>
+        </div>
+
+        <div class="stats-box">
+          <div class="stat-item">
+            <span class="stat-label">已索引文件</span>
+            <span id="stat-files" class="stat-value">0</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-label">文本段落数</span>
+            <span id="stat-chunks" class="stat-value">0</span>
+          </div>
+        </div>
+      </aside>
+
+      <!-- 主内容区 -->
+      <main class="main">
+        <div class="search-bar">
+          <input
+            type="text"
+            id="search-input"
+            class="search-input"
+            placeholder="输入关键词搜索文档..."
+            autocomplete="off"
+          />
+          <button id="search-btn" class="btn-search">搜索</button>
+        </div>
+
+        <div id="results-header" class="results-header" style="display:none">
+          <span id="results-count"></span>
+        </div>
+
+        <div id="results-list" class="results-list"></div>
+
+        <div id="empty-state" class="empty-state">
+          <div class="empty-icon">&#128269;</div>
+          <p class="empty-title">还没有导入任何文档</p>
+          <p class="empty-hint">点击左侧「导入 TXT 文件夹」开始使用</p>
+        </div>
+      </main>
+    </div>
+  </body>
+</html>

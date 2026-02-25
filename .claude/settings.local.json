@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cd \"D:/code-test/search-test/tauri-app/src-tauri\" && cargo check 2>&1)"
+    ]
+  }
+}
