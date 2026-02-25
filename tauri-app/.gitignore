@@ -12,6 +12,9 @@ dist
 dist-ssr
 *.local
 
+# Model files (large binaries, download separately)
+src-tauri/resources/model.onnx
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

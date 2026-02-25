@@ -17,16 +17,33 @@
           <span class="brand-icon">&#9670;</span>
           <span class="brand-name">LocalLens</span>
         </div>
-        <p class="brand-sub">本地文档智能搜索</p>
+        <p class="brand-sub">本地文档语义搜索</p>
 
+        <!-- 模型状态指示器 -->
+        <div id="model-indicator" class="model-indicator">
+          <span class="model-dot"></span>
+          <span id="model-badge" class="model-badge loading">模型加载中…</span>
+        </div>
+
+        <!-- 导入区 -->
         <div class="import-box">
           <button id="import-btn" class="btn-import">
             <span class="btn-icon">&#8853;</span>
             导入 TXT 文件夹
           </button>
+
+          <!-- 进度条 -->
+          <div id="progress-wrap" class="progress-wrap" style="display:none">
+            <div class="progress-track">
+              <div id="progress-bar" class="progress-bar"></div>
+            </div>
+            <span id="progress-label" class="progress-label"></span>
+          </div>
+
           <div id="import-status" class="import-status"></div>
         </div>
 
+        <!-- 统计 -->
         <div class="stats-box">
           <div class="stat-item">
             <span class="stat-label">已索引文件</span>
@@ -35,6 +52,10 @@
           <div class="stat-item">
             <span class="stat-label">文本段落数</span>
             <span id="stat-chunks" class="stat-value">0</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-label">已生成向量</span>
+            <span id="stat-embeddings" class="stat-value">0</span>
           </div>
         </div>
       </aside>
@@ -46,7 +67,7 @@
             type="text"
             id="search-input"
             class="search-input"
-            placeholder="输入关键词搜索文档..."
+            placeholder="输入搜索词（支持自然语言语义搜索）…"
             autocomplete="off"
           />
           <button id="search-btn" class="btn-search">搜索</button>
