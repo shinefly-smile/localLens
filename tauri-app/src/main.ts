@@ -45,7 +45,6 @@ const $ = <T extends HTMLElement>(id: string) =>
 type ModelStatus = "loading" | "ready" | "unavailable" | `failed:${string}`;
 
 async function initModelStatus() {
-  // 查询当前状态（应用可能已经加载好了）
   try {
     const s = await invoke<string>("get_model_status");
     applyModelStatus(s as ModelStatus);
@@ -53,7 +52,6 @@ async function initModelStatus() {
     // ignore
   }
 
-  // 持续监听状态变化事件
   await listen<string>("model-status", (event) => {
     applyModelStatus(event.payload as ModelStatus);
   });
@@ -120,7 +118,6 @@ async function importFolder() {
   progressBar.style.width = "0%";
   progressLabel.textContent = "准备中…";
 
-  // 监听进度事件
   importUnlisten = await listen<ImportProgressPayload>(
     "import-progress",
     (event) => {
@@ -179,29 +176,38 @@ function escapeHtml(s: string): string {
 
 function highlight(text: string, keyword: string): string {
   const safe = escapeHtml(text);
+  if (!keyword.trim()) return safe;
   const esc = keyword.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   return safe.replace(new RegExp(`(${esc})`, "gi"), "<mark>$1</mark>");
 }
 
+/**
+ * 从 content 中提取摘要：
+ * - 关键词存在时：取关键词前后各 contextChars 字符
+ * - 语义搜索无精确匹配：显示前 150 字符
+ * - 关键词搜索无匹配：显示前 2×contextChars 字符
+ */
 function extractSnippet(
   content: string,
   keyword: string,
-  context = 50
+  contextChars: number,
+  isSemantic: boolean
 ): { text: string; isFull: boolean } {
   const lower = content.toLowerCase();
-  const kw = keyword.toLowerCase();
-  const idx = lower.indexOf(kw);
+  const kw = keyword.trim().toLowerCase();
+  const idx = kw.length > 0 ? lower.indexOf(kw) : -1;
 
   if (idx === -1) {
-    const isFull = content.length <= context * 2;
+    const limit = isSemantic ? 150 : contextChars * 2;
+    const isFull = content.length <= limit;
     return {
-      text: isFull ? content : content.slice(0, context * 2) + "…",
+      text: isFull ? content : content.slice(0, limit) + "…",
       isFull,
     };
   }
 
-  const start = Math.max(0, idx - context);
-  const end = Math.min(content.length, idx + keyword.length + context);
+  const start = Math.max(0, idx - contextChars);
+  const end = Math.min(content.length, idx + keyword.length + contextChars);
   const isFull = start === 0 && end === content.length;
   let text = content.slice(start, end);
   if (start > 0) text = "…" + text;
@@ -218,53 +224,58 @@ const FILE_ICON = `<svg width="13" height="13" viewBox="0 0 16 16" fill="none"
   <path d="M6 8h5M6 11h3" stroke-opacity="0.6"/>
 </svg>`;
 
-function scoreToPercent(score: number): number {
-  return Math.round(score * 100);
-}
-
 function buildCard(r: SearchResult, query: string): HTMLElement {
   const card = document.createElement("div");
   card.className = "result-card";
 
-  const { text: snippetText, isFull } = extractSnippet(r.content, query, 55);
+  const { text: snippetText, isFull } = extractSnippet(
+    r.content, query, 80, r.is_semantic
+  );
   const snippetHtml = highlight(snippetText, query);
-  const fullHtml = highlight(r.content, query);
+  const fullHtml    = highlight(r.content,    query);
 
-  // 相似度徽章（只在语义模式下显示）
-  const scoreBadge = r.is_semantic
-    ? `<span class="score-badge" title="语义相似度">${scoreToPercent(r.score)}%</span>`
-    : `<span class="score-badge kw-badge" title="关键词匹配">KW</span>`;
+  // 底部徽章：KW / AI + 相似度
+  const modeBadgeHtml = r.is_semantic
+    ? `<span class="mode-badge ai-badge">AI</span><span class="score-val">${Math.round(r.score * 100)}%</span>`
+    : `<span class="mode-badge kw-badge">KW</span>`;
+
+  // 展开按钮（内容超出摘要时才显示）
+  const expandBtnHtml = isFull
+    ? ""
+    : `<button class="card-expand-btn" data-expanded="false">展开全文 ↓</button>`;
 
   card.innerHTML = `
     <div class="card-header">
       <span class="card-file-icon">${FILE_ICON}</span>
       <span class="card-file-name" title="${escapeHtml(r.file_path)}">${escapeHtml(r.file_name)}</span>
       <span class="card-chunk-badge">段落&nbsp;#${r.chunk_index + 1}</span>
-      ${scoreBadge}
     </div>
     <div class="card-snippet">${snippetHtml}</div>
     <div class="card-full" style="display:none">${fullHtml}</div>
-    ${isFull ? "" : '<button class="card-expand-btn" data-expanded="false">展开全文 ↓</button>'}
+    <div class="card-footer">
+      <div class="card-meta">${modeBadgeHtml}</div>
+      ${expandBtnHtml}
+    </div>
   `;
 
   if (!isFull) {
     const expandBtn = card.querySelector(".card-expand-btn") as HTMLButtonElement;
     const snippetEl = card.querySelector(".card-snippet") as HTMLElement;
-    const fullEl = card.querySelector(".card-full") as HTMLElement;
+    const fullEl    = card.querySelector(".card-full")    as HTMLElement;
 
     expandBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       const expanded = expandBtn.dataset.expanded === "true";
       if (expanded) {
-        fullEl.style.display = "none";
+        fullEl.style.display    = "none";
         snippetEl.style.display = "";
-        expandBtn.textContent = "展开全文 ↓";
+        expandBtn.textContent   = "展开全文 ↓";
         expandBtn.dataset.expanded = "false";
         expandBtn.classList.remove("is-expanded");
       } else {
         snippetEl.style.display = "none";
-        fullEl.style.display = "";
-        expandBtn.textContent = "收起 ↑";
+        fullEl.style.display    = "";
+        expandBtn.textContent   = "收起 ↑";
         expandBtn.dataset.expanded = "true";
         expandBtn.classList.add("is-expanded");
       }
@@ -277,15 +288,22 @@ function buildCard(r: SearchResult, query: string): HTMLElement {
 // ── 分页渲染 ──────────────────────────────────────────────────────────────────
 
 function renderPage() {
-  const list = $("results-list");
-  const lmBtn = list.querySelector(".load-more-btn") as HTMLElement;
+  const list  = $("results-list");
   const count = $("results-count");
+
+  // 取出 lmBtn（可能已在 DOM 中），先移除再末尾追加，避免 insertBefore 引用问题
+  let lmBtn = list.querySelector<HTMLButtonElement>(".load-more-btn");
+  if (!lmBtn) return;
+  lmBtn.remove();
 
   const batch = allResults.slice(shownCount, shownCount + PAGE_SIZE);
   for (const r of batch) {
-    list.insertBefore(buildCard(r, currentQuery), lmBtn);
+    list.appendChild(buildCard(r, currentQuery));
   }
   shownCount += batch.length;
+
+  // 将 lmBtn 追加回末尾
+  list.appendChild(lmBtn);
 
   if (allResults.length > PAGE_SIZE) {
     count.textContent = `找到 ${allResults.length} 条结果，已显示 ${shownCount} 条`;
@@ -305,17 +323,18 @@ async function doSearch() {
   const query = ($<HTMLInputElement>("search-input")).value.trim();
   if (!query) return;
 
-  allResults = [];
-  shownCount = 0;
+  allResults  = [];
+  shownCount  = 0;
   currentQuery = query;
 
-  const list = $("results-list");
+  const list   = $("results-list");
   const header = $("results-header");
-  const count = $("results-count");
+  const count  = $("results-count");
 
+  // 清空结果列表，放入新的 lmBtn
   list.innerHTML = "";
   const lmBtn = document.createElement("button");
-  lmBtn.className = "load-more-btn";
+  lmBtn.className     = "load-more-btn";
   lmBtn.style.display = "none";
   lmBtn.addEventListener("click", renderPage);
   list.appendChild(lmBtn);

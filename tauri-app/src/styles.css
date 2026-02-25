@@ -268,7 +268,6 @@ html, body { height: 100%; overflow: hidden; }
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 10px;
   padding-right: 4px;
   padding-bottom: 4px;
 }
@@ -282,7 +281,11 @@ html, body { height: 100%; overflow: hidden; }
   border: 1px solid var(--border);
   border-radius: var(--radius);
   overflow: hidden;
+  /* 用 margin-bottom 保证追加卡片时间距稳定，flex gap 作补充 */
+  margin-bottom: 12px;
   transition: border-color 0.18s, background 0.18s;
+  /* 防止 flex 子元素被压缩 */
+  flex-shrink: 0;
 }
 .result-card:hover {
   border-color: var(--border-h);
@@ -294,7 +297,7 @@ html, body { height: 100%; overflow: hidden; }
   display: flex;
   align-items: center;
   gap: 7px;
-  padding: 10px 14px 8px;
+  padding: 10px 16px 9px;
   border-bottom: 1px solid var(--border);
 }
 .card-file-icon {
@@ -323,37 +326,17 @@ html, body { height: 100%; overflow: hidden; }
   white-space: nowrap;
 }
 
-/* ── 相似度徽章 ───────────────────────────────────────────────────────────── */
-.score-badge {
-  flex-shrink: 0;
-  font-size: 0.72rem;
-  font-weight: 700;
-  background: rgba(124, 106, 247, 0.18);
-  color: var(--accent-h);
-  border: 1px solid rgba(124, 106, 247, 0.35);
-  border-radius: 20px;
-  padding: 1px 8px;
-  white-space: nowrap;
-  letter-spacing: 0.02em;
-}
-/* 关键词模式徽章用不同颜色 */
-.score-badge.kw-badge {
-  background: rgba(251, 191, 36, 0.12);
-  color: var(--warn);
-  border-color: rgba(251, 191, 36, 0.3);
-}
-
-/* 摘要 / 全文区 */
+/* 摘要区 / 全文区 */
 .card-snippet {
-  padding: 10px 14px 8px;
-  font-size: 0.875rem;
-  line-height: 1.7;
+  padding: 12px 16px 10px;
+  font-size: 0.88rem;
+  line-height: 1.75;
   color: var(--text);
   word-break: break-word;
 }
 .card-full {
-  padding: 10px 14px 8px;
-  font-size: 0.875rem;
+  padding: 12px 16px 10px;
+  font-size: 0.88rem;
   line-height: 1.75;
   color: var(--text);
   white-space: pre-wrap;
@@ -361,21 +344,62 @@ html, body { height: 100%; overflow: hidden; }
   border-top: 1px dashed var(--border);
 }
 
-/* 展开按钮 */
+/* 卡片底部：模式徽章 + 展开按钮 */
+.card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px 16px 8px;
+  border-top: 1px solid var(--border);
+  gap: 8px;
+}
+.card-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* 模式徽章：KW / AI */
+.mode-badge {
+  font-size: 0.7rem;
+  font-weight: 700;
+  border-radius: 4px;
+  padding: 2px 7px;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+}
+.mode-badge.ai-badge {
+  background: rgba(124, 106, 247, 0.18);
+  color: var(--accent-h);
+  border: 1px solid rgba(124, 106, 247, 0.35);
+}
+.mode-badge.kw-badge {
+  background: rgba(251, 191, 36, 0.12);
+  color: var(--warn);
+  border: 1px solid rgba(251, 191, 36, 0.3);
+}
+
+/* 相似度数值（AI 模式下显示在 AI 徽章旁） */
+.score-val {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--accent-h);
+  opacity: 0.85;
+}
+
+/* 展开按钮（在 footer 右侧） */
 .card-expand-btn {
-  display: block;
-  width: 100%;
   background: none;
   border: none;
-  border-top: 1px solid var(--border);
-  padding: 7px 14px;
-  text-align: left;
+  padding: 2px 6px;
   font-size: 0.78rem;
   color: var(--text-muted);
   cursor: pointer;
-  transition: color 0.15s, background 0.15s;
+  white-space: nowrap;
+  transition: color 0.15s;
+  flex-shrink: 0;
 }
-.card-expand-btn:hover { color: var(--accent-h); background: rgba(124,106,247,0.06); }
+.card-expand-btn:hover { color: var(--accent-h); }
 .card-expand-btn.is-expanded { color: var(--accent); }
 
 /* ── 关键词高亮 ───────────────────────────────────────────────────────────── */
